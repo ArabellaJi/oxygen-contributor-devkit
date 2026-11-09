@@ -88,6 +88,11 @@ sources, because both exporters produce the same Markdown format.
   these capabilities before dispatch. The Python helper prepares and validates
   calls; it does not launch model workers by itself.
 - Access to the npm registry when review-app dependencies need installation.
+- Archived Codex `.jsonl.zst` logs need a zstd decoder. On Python 3.10–3.13,
+  install `zstandard` with `python -m pip install zstandard`, using the same
+  Python interpreter selected by `OXYGEN_PYTHON`. Python 3.14+ can use
+  `compression.zstd`; a `zstd` executable on PATH is also supported. Restart
+  Oxygen after installing a decoder so its runner can discover it.
 
 The default pilot converts **all** collected snapshots, then processes **up to
 three** eligible Markdown trajectories through the remaining stages. To summarize
@@ -186,8 +191,9 @@ and the **Earlier extraction drafts** filter.
 
 ## 1. Collect workspace sessions
 
-Run these commands from the toolkit root. The tools use the Python standard library;
-token counting is an optional dependency described below. Create a new private run
+Run these commands from the toolkit root. The tools use the Python standard library,
+with a zstd decoder for compressed logs as described above; token counting is an
+optional dependency described below. Create a new private run
 directory outside Codex session storage, then collect frozen snapshots:
 
 ```bash
