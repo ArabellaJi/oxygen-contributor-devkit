@@ -230,7 +230,8 @@ def project_root(cwd: str) -> str:
     if Path(cwd).is_dir():
         try:
             result = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                                    capture_output=True, text=True, timeout=3)
+                                    capture_output=True, text=True, timeout=3,
+                                    encoding="utf-8" if os.name == "nt" else None)
         except (OSError, subprocess.SubprocessError):
             return cwd
         top = result.stdout.strip()
@@ -1027,6 +1028,8 @@ async def cross_session(job_dir: Path, workers_factory=Workers) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if os.name == "nt":
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("workspaces")

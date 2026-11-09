@@ -476,7 +476,8 @@ def accept(run, worker_id, worker_status, stage="synthesis"):
 
 def main(argv=None):
     if os.name == "nt":
-        sys.stdout.reconfigure(newline="\n")
+        sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     prep = commands.add_parser("prepare")
@@ -517,7 +518,9 @@ def main(argv=None):
                 for name, sha in manifest["frozenHashes"].items():
                     if name.replace("\\", "/").startswith("protocol/") and digest(regular(private_relative(run, name))) != sha:
                         raise ValueError(f"frozen_file_changed: {name}")
-                return subprocess.run([sys.executable, str(helper), *(argv or sys.argv[1:])]).returncode
+                environment = {**os.environ, "PYTHONIOENCODING": "utf-8"} if os.name == "nt" else None
+                return subprocess.run([sys.executable, str(helper), *(argv or sys.argv[1:])],
+                                      env=environment).returncode
         if args.command == "prepare":
             result = prepare(args.input, run, host=args.host, model=args.model, effort=args.effort)
         elif args.command == "call":

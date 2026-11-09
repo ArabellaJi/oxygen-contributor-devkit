@@ -79,7 +79,12 @@ class LabelSummaryTests(unittest.TestCase):
                 LABEL.label_file(source, source)
             self.assertEqual(output.read_bytes(), b"Keep existing output")
             link = Path(temporary) / "alias.md"
-            link.symlink_to(source)
+            try:
+                link.symlink_to(source)
+            except OSError as error:
+                if getattr(error, "winerror", None) != 1314:
+                    raise
+                self.skipTest("Windows account cannot create symbolic links")
             with self.assertRaises((OSError, ValueError)):
                 LABEL.label_file(link, Path(temporary) / "new.md")
             self.assertFalse((Path(temporary) / "new.md").exists())
