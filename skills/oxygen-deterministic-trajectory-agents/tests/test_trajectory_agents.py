@@ -681,7 +681,12 @@ class TrajectoryAgentsTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             RUN.issue_call(self.source, "summary")
         link = self.root / "link.jsonl"
-        link.symlink_to(self.source)
+        try:
+            link.symlink_to(self.source)
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows account cannot create symbolic links")
         with self.assertRaisesRegex(RUN.RunError, "input_symlink"):
             RUN.prepare(link)
 

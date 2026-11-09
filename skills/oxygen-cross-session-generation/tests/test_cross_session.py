@@ -889,7 +889,12 @@ class CrossSessionLifecycleTests(unittest.TestCase):
         target = self.root / "external-summary.md"
         target.write_bytes(name.read_bytes())
         name.unlink()
-        name.symlink_to(target)
+        try:
+            name.symlink_to(target)
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows account cannot create symbolic links")
         with self.assertRaisesRegex(ValueError, "symlink_in_run"):
             CROSS.verify(self.run)
 

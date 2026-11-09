@@ -339,7 +339,12 @@ class MarkdownExportTests(unittest.TestCase):
 
     def test_dangling_markdown_symlink_refused_before_jsonl_publication(self):
         self.write_source([message("user", "Request")])
-        self.markdown.symlink_to(self.root / "absent.md")
+        try:
+            self.markdown.symlink_to(self.root / "absent.md")
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows account cannot create symbolic links")
         with self.assertRaises(STRIP.FilterError):
             STRIP.filter_rollout(self.source, self.output, self.report, markdown_path=self.markdown)
         self.assertTrue(self.markdown.is_symlink())

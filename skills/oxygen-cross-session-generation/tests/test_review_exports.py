@@ -389,7 +389,12 @@ class ReviewExportTests(unittest.TestCase):
 
     def test_symlinks_are_rejected(self):
         write_export(self.root)
-        (self.root / "copy.md").symlink_to(self.root / "summary.md")
+        try:
+            (self.root / "copy.md").symlink_to(self.root / "summary.md")
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows account cannot create symbolic links")
         with self.assertRaisesRegex(ValueError, "symlinks"):
             self.normalize()
 
