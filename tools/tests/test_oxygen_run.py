@@ -135,6 +135,28 @@ class Environment(unittest.TestCase):
 
 
 class DiscoveryTests(Environment):
+    @unittest.skipUnless(os.name == "nt", "Windows legacy console encoding")
+    def test_cli_outputs_utf8_without_the_launcher(self):
+        workspace = self.root / "项目 café"
+        workspace.mkdir()
+        subprocess.run(["git", "init", "--quiet", str(workspace)], check=True, capture_output=True)
+        self.codex_file("unicode.jsonl", codex_session(str(workspace), "unicode", "检查编码 🙂"))
+        (self.codex / "session_index.jsonl").write_bytes(jsonl([
+            {"id": "unicode", "thread_name": "检查编码 🙂", "updated_at": "2026-01-01"},
+        ]))
+        environment = {**os.environ, "PYTHONUTF8": "0", "PYTHONIOENCODING": "cp1252"}
+        cases = [
+            (["workspaces"], {"workspaces": OXY.workspaces()}),
+            (["sessions", "--workspace", str(workspace)], {"sessions": OXY.workspace_sessions(str(workspace))}),
+            (["session-names", "--session", "codex:unicode"], {"names": {"codex:unicode": "检查编码 🙂"}}),
+        ]
+        for command, expected in cases:
+            with self.subTest(command=command[0]):
+                completed = subprocess.run([sys.executable, str(TOOLS / "oxygen_run.py"), *command],
+                                           capture_output=True, env=environment)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout.decode("utf-8")), expected)
+
     def test_workspaces_group_sessions_by_project_and_skip_subagents(self):
         self.claude_file("a.jsonl", claude_session(str(self.work), "a", "First request"))
         self.claude_file("b.jsonl", claude_session(str(self.work), "b", "Second request"))

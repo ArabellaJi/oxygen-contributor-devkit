@@ -579,6 +579,47 @@ class CrossSessionLifecycleTests(unittest.TestCase):
                          f"\n[End of displayed chunk. Next byte offset: {len(expected)}]\n".encode())
         self.assertEqual(CROSS.load(self.run / "read_receipts.json"), [receipt])
 
+    @unittest.skipUnless(os.name == "nt", "Windows legacy console encoding")
+    def test_cli_reads_utf8_and_reports_unicode_errors_without_the_launcher(self):
+        self.reviews[0]["current"]["summaryLines"][1]["text"] = "café 🙂 漢字"
+        FIXTURES.write_export(self.inputs / "a", self.reviews[0])
+        self.run = self.root / "运行 café"
+        environment = {**os.environ, "PYTHONUTF8": "0", "PYTHONIOENCODING": "cp1252"}
+        prepared = subprocess.run([sys.executable, str(SCRIPT), "prepare", str(self.inputs),
+                                   "--run", str(self.run)], capture_output=True, env=environment)
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        self.assertEqual(json.loads(prepared.stdout.decode("utf-8"))["run"], str(self.run))
+        name = "reading/S001/summary.md"
+        expected = (self.run / name).read_bytes()
+        completed = subprocess.run([sys.executable, str(SCRIPT), "read", str(self.run),
+                                    "--file", name, "--limit", "1000"],
+                                   capture_output=True, env=environment)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        receipt_line, displayed = completed.stdout.split(b"\n", 1)
+        receipt = json.loads(receipt_line)
+        self.assertEqual(receipt["end"], len(expected))
+        self.assertEqual(displayed, expected +
+                         f"\n[End of displayed chunk. Next byte offset: {len(expected)}]\n".encode())
+        missing = self.root / "不存在 🙂"
+        failed = subprocess.run([sys.executable, str(SCRIPT), "verify", str(missing)],
+                                capture_output=True, env=environment)
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn(str(missing), json.loads(failed.stderr.decode("utf-8"))["error"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows legacy console encoding")
+    def test_live_cli_passes_utf8_to_an_older_frozen_helper(self):
+        self.prepare()
+        helper = self.run / "protocol/scripts/cross_session.py"
+        helper.write_bytes('print("历史 🙂")\n'.encode("utf-8"))
+        manifest = CROSS.load(self.run / "manifest.json")
+        manifest["frozenHashes"]["protocol/scripts/cross_session.py"] = CROSS.digest(helper.read_bytes())
+        CROSS.write(self.run / "manifest.json", manifest, replace=True)
+        completed = subprocess.run([sys.executable, str(SCRIPT), "verify", str(self.run)],
+                                   capture_output=True,
+                                   env={**os.environ, "PYTHONUTF8": "0", "PYTHONIOENCODING": "cp1252"})
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.decode("utf-8").strip(), "历史 🙂")
+
     def test_cli_chunk_boundary_reports_exact_next_byte_offset(self):
         self.reviews[0]["current"]["summaryLines"][1]["text"] = "x" * 20000 + "🙂" + "y" * 20000
         FIXTURES.write_export(self.inputs / "a", self.reviews[0])
