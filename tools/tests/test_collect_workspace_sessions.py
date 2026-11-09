@@ -95,6 +95,16 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
         self.source("exact")
         self.source("nested", cwd=self.workspace / "child" / "nested", source="vscode")
         self.source("normalized", cwd=str(self.workspace / "child") + "/../", source="exec")
+        self.source("sibling", cwd=str(self.workspace) + "-other")
+        self.source("outside", cwd=self.root, body=record("turn_context", {"cwd": str(self.workspace)}))
+        self.source("moved", body=record("turn_context", {"cwd": str(self.root)}))
+        result = self.collect()
+        self.assertTrue(result["complete"])
+        self.assertEqual({x["session_id"] for x in result["sessions"]},
+                         {"exact", "nested", "normalized", "moved"})
+        self.assertEqual(result["counts"]["excluded_by_reason"], {"outside_workspace": 2})
+
+    def test_workspace_symlink_alias_is_included(self):
         alias = self.root / "alias"
         try:
             alias.symlink_to(self.workspace, target_is_directory=True)
@@ -103,14 +113,9 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
                 raise
             self.skipTest("Windows account cannot create symbolic links")
         self.source("alias", cwd=alias)
-        self.source("sibling", cwd=str(self.workspace) + "-other")
-        self.source("outside", cwd=self.root, body=record("turn_context", {"cwd": str(self.workspace)}))
-        self.source("moved", body=record("turn_context", {"cwd": str(self.root)}))
         result = self.collect()
         self.assertTrue(result["complete"])
-        self.assertEqual({x["session_id"] for x in result["sessions"]},
-                         {"exact", "nested", "normalized", "alias", "moved"})
-        self.assertEqual(result["counts"]["excluded_by_reason"], {"outside_workspace": 2})
+        self.assertEqual([x["session_id"] for x in result["sessions"]], ["alias"])
 
     def test_subagent_variants_and_main_forks(self):
         variants = ["subagent", {"subagent": "review"}, {"subagent": {"other": "guardian"}},
@@ -263,16 +268,9 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertEqual(result["errors"][0]["reason"], "source_metadata_changed")
 
-    def test_unreadable_file_and_symlinks_do_not_stop_other_sessions(self):
+    def test_unreadable_file_does_not_stop_other_sessions(self):
         unreadable = self.source("unreadable")
-        good = self.source("good")
-        try:
-            (good.parent / "link.jsonl").symlink_to(good)
-            (self.home / "sessions" / "linked-dir").symlink_to(good.parent, target_is_directory=True)
-        except OSError as error:
-            if getattr(error, "winerror", None) != 1314:
-                raise
-            self.skipTest("Windows account cannot create symbolic links")
+        self.source("good")
         real_open = COLLECT.open_source
 
         def deny_one(path):
@@ -285,7 +283,21 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertEqual(result["counts"]["snapshots"], 1)
         self.assertNotIn("PRIVATE_ERROR_TEXT", json.dumps(result))
-        self.assertEqual(len(result["errors"]), 3)
+        self.assertEqual(len(result["errors"]), 1)
+
+    def test_symlinks_do_not_stop_other_sessions(self):
+        good = self.source("good")
+        try:
+            (good.parent / "link.jsonl").symlink_to(good)
+            (self.home / "sessions" / "linked-dir").symlink_to(good.parent, target_is_directory=True)
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows account cannot create symbolic links")
+        result = self.collect()
+        self.assertFalse(result["complete"])
+        self.assertEqual([x["session_id"] for x in result["sessions"]], ["good"])
+        self.assertEqual(len(result["errors"]), 2)
 
     def test_output_refusals(self):
         self.source()
@@ -293,6 +305,14 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
         existing.mkdir()
         sentinel = existing / "preserve"
         sentinel.write_text("untouched")
+        for output in (existing, self.home / "sessions" / "output",
+                       self.home / "archived_sessions" / "output"):
+            with self.subTest(output=output), self.assertRaises(COLLECT.CollectionError):
+                COLLECT.collect(self.workspace, self.home, output)
+        self.assertEqual(sentinel.read_text(), "untouched")
+
+    def test_output_through_storage_symlink_is_refused(self):
+        self.source()
         alias = self.root / "storage-alias"
         try:
             alias.symlink_to(self.home / "sessions", target_is_directory=True)
@@ -300,11 +320,8 @@ class CollectWorkspaceSessionsTests(unittest.TestCase):
             if getattr(error, "winerror", None) != 1314:
                 raise
             self.skipTest("Windows account cannot create symbolic links")
-        for output in (existing, self.home / "sessions" / "output",
-                       self.home / "archived_sessions" / "output", alias / "output"):
-            with self.subTest(output=output), self.assertRaises(COLLECT.CollectionError):
-                COLLECT.collect(self.workspace, self.home, output)
-        self.assertEqual(sentinel.read_text(), "untouched")
+        with self.assertRaises(COLLECT.CollectionError):
+            COLLECT.collect(self.workspace, self.home, alias / "output")
 
     def test_dry_run_writes_nothing_and_cli_exit_status(self):
         self.source()

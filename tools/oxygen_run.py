@@ -230,7 +230,8 @@ def project_root(cwd: str) -> str:
     if Path(cwd).is_dir():
         try:
             result = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                                    capture_output=True, text=True, encoding="utf-8", timeout=3)
+                                    capture_output=True, text=True, timeout=3,
+                                    encoding="utf-8" if os.name == "nt" else None)
         except (OSError, subprocess.SubprocessError):
             return cwd
         top = result.stdout.strip()
